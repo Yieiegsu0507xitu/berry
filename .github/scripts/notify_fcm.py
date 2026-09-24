@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Automated Firebase Cloud Messaging (FCM) Notification Broadcaster
-Triggered by GitHub Actions on push when WallGEM catalog is updated.
+Triggered by GitHub Actions on push when WallBerry catalog is updated.
 Broadcasts a push notification to all users subscribed to topic 'wallpapers'.
 """
 
@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import subprocess
+import random
 
 # Ensure UTF-8 output encoding across all operating systems
 if hasattr(sys.stdout, "reconfigure"):
@@ -30,20 +31,16 @@ def extract_added_wallpapers(catalog_path):
     """
     added_wallpapers = []
     try:
-        # Check if there is a git commit history to diff against
         diff_cmd = ["git", "diff", "HEAD~1", "HEAD", "--", catalog_path]
         diff_output = subprocess.check_output(diff_cmd, text=True, stderr=subprocess.DEVNULL)
         
-        # Look for newly added lines in the diff
         added_lines = [line[1:].strip() for line in diff_output.splitlines() if line.startswith("+") and not line.startswith("+++")]
         diff_content = "\n".join(added_lines)
         
-        # Try to parse newly added blocks
         try:
             with open(catalog_path, "r", encoding="utf-8") as f:
                 full_catalog = json.load(f)
             
-            # Match wallpapers whose url appears in the added lines
             for item in full_catalog:
                 url = item.get("url", "")
                 name = item.get("name", "")
@@ -54,7 +51,6 @@ def extract_added_wallpapers(catalog_path):
     except Exception:
         pass
 
-    # Fallback if diff produced no matches: read the top of catalog
     if not added_wallpapers:
         try:
             with open(catalog_path, "r", encoding="utf-8") as f:
@@ -66,29 +62,30 @@ def extract_added_wallpapers(catalog_path):
 
     return added_wallpapers
 
+# Clean, engaging notification templates rotated across uploads
+NOTIFICATION_TEMPLATES = [
+    ("New Wallpapers Added 🎨", "Tap to view the latest wallpapers."),
+    ("Fresh Wallpapers Arrived ✨", "Tap to check them out!"),
+    ("New Wallpapers Are Here! 🚀", "Discover the latest wallpapers in WallBerry."),
+    ("Fresh Wallpapers Just Dropped 💫", "Give your screen a fresh new look."),
+    ("We've Added Fresh Wallpapers ✨", "Tap to explore them."),
+    ("New Wallpapers Just Landed 🖼️", "Fresh picks are waiting for you.")
+]
+
 def build_notification_content(added_wallpapers):
     count = len(added_wallpapers)
     if count == 0:
         return None
 
     first = added_wallpapers[0]
-    name = first.get("name", "New Wallpaper")
-    collection = first.get("collections", "WallBerry")
     image_url = first.get("thumbnail") or first.get("url")
 
-    if count == 1:
-        title = f"New Wallpaper Added: {name} 🎨"
-        body = f"A fresh {collection} wallpaper is now available in WallBerry. Tap to apply!"
-    else:
-        title = f"{count} New Wallpapers Added! 🎨"
-        body = f"Fresh wallpapers including '{name}' in {collection} are live in WallBerry. Check them out!"
+    title, body = random.choice(NOTIFICATION_TEMPLATES)
 
     return {
         "title": title,
         "body": body,
         "image_url": image_url,
-        "wallpaper_name": name,
-        "collection": collection,
         "count": count
     }
 
@@ -132,9 +129,7 @@ def send_fcm_notification(project_id, service_account_json_str, content):
             "data": {
                 "title": content["title"],
                 "body": content["body"],
-                "image_url": content["image_url"] or "",
-                "wallpaper_name": content["wallpaper_name"] or "",
-                "collection": content["collection"] or ""
+                "image_url": content["image_url"] or ""
             },
             "android": {
                 "priority": "HIGH",
@@ -184,11 +179,7 @@ def main():
 
     if not service_account_str:
         print("NOTICE: FIREBASE_SERVICE_ACCOUNT_JSON secret is not set.")
-        print("To enable automatic live push notifications:")
-        print("1. Go to Firebase Console -> Project Settings -> Service Accounts")
-        print("2. Click 'Generate new private key'")
-        print("3. Add the JSON key content to GitHub Secrets as 'FIREBASE_SERVICE_ACCOUNT_JSON'")
-        print("\nSimulation complete. Notification formatted successfully.")
+        print("Simulation complete. Notification formatted successfully.")
         sys.exit(0)
 
     success = send_fcm_notification(project_id, service_account_str, content)
